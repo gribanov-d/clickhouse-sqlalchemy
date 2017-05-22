@@ -1,16 +1,13 @@
 import re
 
 from sqlalchemy import types as sqltypes
-from sqlalchemy import util as sa_util, exc
+from sqlalchemy import exc
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.sql import compiler, expression
 from sqlalchemy.types import DATE, DATETIME, INTEGER, VARCHAR, FLOAT
 
-from . import types, connector
+from .. import types
 
-
-# Export connector version
-VERSION = (0, 0, 1, None)
 
 # Column spec
 colspecs = {}
@@ -171,17 +168,6 @@ class ClickHouseDDLCompiler(compiler.DDLCompiler):
         return text + self.preparer.format_table(drop.element)
 
 
-class ClickHouseExecutionContext(default.DefaultExecutionContext):
-    @sa_util.memoized_property
-    def should_autocommit(self):
-        return False  # No DML supported, never autocommit
-
-    def pre_exec(self):
-        # TODO: refactor this mess
-        if not self.isinsert and not self.isddl:
-            self.statement += ' FORMAT TabSeparatedWithNamesAndTypes'
-
-
 class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
     def visit_string(self, type_, **kw):
         if type_.length is None:
@@ -226,7 +212,7 @@ class ClickHouseTypeCompiler(compiler.GenericTypeCompiler):
         return 'Float64'
 
 
-class ClickHouseDialect(default.DefaultDialect):
+class ClickHouseDialectBase(default.DefaultDialect):
     name = 'clickhouse'
     supports_cast = True
     supports_unicode_statements = True
@@ -252,27 +238,9 @@ class ClickHouseDialect(default.DefaultDialect):
     type_compiler = ClickHouseTypeCompiler
     statement_compiler = ClickHouseCompiler
     ddl_compiler = ClickHouseDDLCompiler
-    execution_ctx_cls = ClickHouseExecutionContext
-
-    @classmethod
-    def dbapi(cls):
-        return connector
-
-    def create_connect_args(self, url):
-        kwargs = {}
-        protocol = url.query.pop('protocol', 'http')
-        port = url.port or 8123
-        db_name = url.database or 'default'
-
-        kwargs.update(url.query)
-
-        db_url = '%s://%s:%d/' % (protocol, url.host, port)
-
-        return (db_url, db_name, url.username, url.password), kwargs
 
     def _execute(self, connection, sql):
-        sql += ' FORMAT TabSeparatedWithNamesAndTypes'
-        return connection.execute(sql)
+        raise NotImplementedError
 
     @reflection.cache
     def get_view_names(self, connection, schema=None, **kw):
@@ -339,6 +307,3 @@ class ClickHouseDialect(default.DefaultDialect):
 
     def _check_unicode_description(self, connection):
         return True
-
-
-dialect = ClickHouseDialect
