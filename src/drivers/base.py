@@ -8,10 +8,8 @@ from sqlalchemy.types import DATE, DATETIME, INTEGER, VARCHAR, FLOAT
 
 from .. import types
 
-
 # Column spec
 colspecs = {}
-
 
 # Type converters
 ischema_names = {
@@ -92,6 +90,18 @@ class ClickHouseCompiler(compiler.SQLCompiler):
 
         return text
 
+    def visit_join(self, join, asfrom=False, **kwargs):
+        onclause_raw = join.onclause._compiler_dispatch(self, **kwargs)
+        o = onclause_raw.split(" = ")
+        otmp = " USING %s" % o[1]
+
+        return ''.join(
+            (self.process(join.left, asfrom=True, **kwargs),
+             " ANY",
+             (join.isouter and " JOIN " or " LEFT JOIN "),
+             self.process(join.right, asfrom=True, **kwargs),
+             otmp))
+
     def visit_extract(self, extract, **kw):
         field = self.extract_map.get(extract.field, extract.field)
         column = self.process(extract.expr, **kw)
@@ -145,7 +155,7 @@ class ClickHouseCompiler(compiler.SQLCompiler):
             text += self.order_by_clause(select, **kwargs)
 
         if (select._limit_clause is not None or
-                select._offset_clause is not None):
+                    select._offset_clause is not None):
             text += self.limit_clause(select, **kwargs)
 
         if select._for_update_arg is not None:
