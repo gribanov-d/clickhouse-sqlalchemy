@@ -123,6 +123,8 @@ class ClickHouseCompiler(compiler.SQLCompiler):
             return 'toYear(%s)' % column
         elif field == 'month':
             return 'toMonth(%s)' % column
+        elif field == 'week':
+            return '1 + toRelativeWeekNum(toDate("%s")) - toRelativeWeekNum(toStartOfYear(toDate("%s")))' % (column, column)
         elif field == 'day':
             return 'toDayOfMonth(%s)' % column
         else:
@@ -131,21 +133,21 @@ class ClickHouseCompiler(compiler.SQLCompiler):
     def visit_join(self, join, asfrom=False, **kwargs):
         join_type = " "
 
-        if join.global_:
+        if getattr(join, 'global_', False):
             join_type += "GLOBAL "
 
-        if join.any:
+        if getattr(join, 'any', False):
             join_type += "ANY "
 
-        if join.all:
+        if getattr(join, 'all', False):
             join_type += "ALL "
 
         if join.isouter:
             join_type += "LEFT OUTER JOIN "
         else:
-            join_type += "INNER JOIN "
+            join_type += "ANY LEFT JOIN "
 
-        if not isinstance(join.onclause, elements.Tuple):
+        if not isinstance(join.onclause, elements.ColumnElement):
             raise exc.CompileError(
                 "Only tuple elements are supported. "
                 "Got: %s" % type(join.onclause)
@@ -155,7 +157,7 @@ class ClickHouseCompiler(compiler.SQLCompiler):
             join.left._compiler_dispatch(self, asfrom=True, **kwargs) +
             join_type +
             join.right._compiler_dispatch(self, asfrom=True, **kwargs) +
-            " USING " + join.onclause._compiler_dispatch(self, **kwargs)
+            " USING " + join.onclause._compiler_dispatch(self, **kwargs).split(" = ").pop()
         )
 
     def _compose_select_body(
