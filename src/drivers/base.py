@@ -1,4 +1,5 @@
 import re
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import schema, types as sqltypes, exc, util as sa_util
 from sqlalchemy.engine import default, reflection
@@ -159,6 +160,15 @@ class ClickHouseCompiler(compiler.SQLCompiler):
             join.right._compiler_dispatch(self, asfrom=True, **kwargs) +
             " USING " + join.onclause._compiler_dispatch(self, **kwargs).split(" = ").pop()
         )
+
+    def visit_bindparam(self, bindparam, within_columns_clause=False,
+                        literal_binds=False, **kwargs):
+        return self.render_literal_value(bindparam.value, bindparam.type)
+
+    def render_literal_value(self, value, type_):
+        if isinstance(value, (basestring, date, datetime, timedelta)):
+            return "'%s'" % str(value).replace("'", "''")
+        return super(ClickHouseCompiler, self).render_literal_value(value, type_)
 
     def _compose_select_body(
             self, text, select, inner_columns, froms, byfrom, kwargs):
